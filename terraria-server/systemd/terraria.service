@@ -1,0 +1,19 @@
+# /etc/systemd/system/terraria.service
+# Terraria 专用服主进程（经 FIFO 注入控制台命令，见 scripts/start.sh）
+[Unit]
+Description=Terraria Dedicated Server (vanilla 1458)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=terraria
+WorkingDirectory=/opt/terraria
+ExecStart=/opt/terraria/start.sh
+ExecStop=/bin/sh -c 'echo exit > /opt/terraria/console.fifo'
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terraria 服务器控制台</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #161a20; --line: #262b36;
+    --txt: #e6e9ef; --muted: #8b93a3;
+    --green: #4ade80; --blue: #60a5fa; --amber: #e8b84b; --red: #f87171; --purple: #a78bfa;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--txt);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    height: 100vh; padding: 6px 16px 10px;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 8px; }
+  .btn {
+    background: var(--card); color: var(--muted); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+  }
+  .btn:hover { color: var(--txt); border-color: #3a4150; }
+  .btn.primary { color: #0f1115; background: var(--blue); border-color: var(--blue); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .statusbar {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 14px; margin-bottom: 8px;
+  }
+  .row1 { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .online-box { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .bignum { font-size: 34px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+  .dot.on { background: var(--green); box-shadow: 0 0 7px rgba(74,222,128,.6); }
+  .dot.off { background: #4b5563; }
+  .who { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  .metrics { display: flex; gap: 16px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+  .m { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .m .k { color: var(--muted); font-size: 11px; }
+  .m .v { font-weight: 600; }
+  .m .v small { color: var(--muted); font-weight: 400; font-size: 11px; }
+  .status-ok { color: var(--green); }
+  .status-bad { color: var(--red); }
+  .bars { display: flex; gap: 12px; margin-top: 8px; }
+  .bar-item { flex: 1; min-width: 0; }
+  .bar-item .bk { color: var(--muted); font-size: 11px; margin-bottom: 3px; display: flex; justify-content: space-between; }
+  .bar { height: 5px; background: #232833; border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 3px; background: var(--blue); transition: width .4s; }
+  .bar i.warn { background: var(--amber); }
+  .bar i.hot { background: var(--red); }
+  .console {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 14px 12px; flex: 1; min-height: 0; display: flex; flex-direction: column;
+  }
+  .console .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 10px; }
+  .console .head .k { color: var(--muted); font-size: 12px; }
+  .logbox {
+    background: #0a0c10; border: 1px solid var(--line); border-radius: 10px;
+    flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    scrollbar-width: thin;
+    scrollbar-color: #2a313d transparent;
+  }
+  .logbox::-webkit-scrollbar { width: 8px; height: 8px; }
+  .logbox::-webkit-scrollbar-track { background: transparent; }
+  .logbox::-webkit-scrollbar-thumb { background: #2a313d; border-radius: 4px; border: 2px solid #0a0c10; }
+  .logbox::-webkit-scrollbar-thumb:hover { background: #3f4857; }
+  .logbox::-webkit-scrollbar-corner { background: transparent; }
+
+  /* ===== 事件流：who | body | 时间(右) 三列 ===== */
+  .item {
+    display: grid;
+    grid-template-columns: 160px 1fr 104px;
+    column-gap: 12px;
+    align-items: center;
+    padding: 2.5px 10px;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+    min-height: 23px;
+    margin-bottom: 3px;
+  }
+  .item:hover { background: rgba(255,255,255,.03); }
+  .item .t { color: #49515f; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+  /* 玩家名徽章：方框 + 用户色，防止与语义色混淆 */
+  .item .who {
+    font-weight: 600; font-size: 12px; padding: 1px 8px;
+    border: 1px solid transparent; border-radius: 5px;
+    justify-self: start; white-space: nowrap; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .item .body { font-size: 13px; overflow-wrap: anywhere; line-height: 1.55; }
+
+  .item.chat .body { color: #dde3ee; }
+  .item.io .body { color: #5d7c9e; font-size: 12px; }
+  /* 存档：绿色色条单行 */
+  .item.save { border-left-color: var(--green); background: rgba(74,222,128,.045); margin-top: 4px; }
+  .item.save .who { color: var(--green); font-size: 13px; }
+  .item.save .body { font-weight: 600; font-size: 12.5px; }
+  /* 自动存档无 body，时间固定第三列与其他行对齐 */
+  .item.save .t { grid-column: 3; }
+  /* 连续存档折叠（两次间无其他事件）：×N 可点击展开每次时间 */
+  .item.save.fold { cursor: pointer; margin-top: 4px; }
+  .item.save.fold:hover { background: rgba(255,255,255,.03); }
+  /* 系统：最弱 */
+  .item.sys .who { color: var(--muted); font-size: 11.5px; }
+  .item.sys .body { color: #6e7684; font-size: 12px; }
+  /* 服务生命周期：紫色 */
+  .item.boot { border-left-color: var(--purple); margin-top: 4px; }
+  .item.boot .who { color: var(--purple); font-size: 11.5px; }
+  .item.boot .body { font-size: 12.5px; }
+  /* 拒绝 / 区块异常 / 死亡：红色重档 */
+  .item.deny, .item.err, .item.die { border-left-color: var(--red); background: rgba(248,113,113,.055); margin-top: 4px; }
+  .item.deny .who, .item.err .who, .item.die .who { color: var(--red); font-size: 11.5px; }
+  .item.deny .body, .item.die .body { color: #e89a9a; }
+  .item.err .body { color: #f0b0b0; font-size: 12.5px; }
+  /* 世界事件（血月/入侵/Boss 预留）：琥珀 */
+  .item.event { border-left-color: var(--amber); background: rgba(232,184,75,.05); margin-top: 4px; }
+  .item.event .who { color: var(--amber); font-size: 11.5px; }
+  .item.event .body { font-size: 12.5px; }
+
+  /* 昼夜扁条：白天白、夜晚灰，3px 不占空间 */
+  .daynight { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .daynight i { display: block; height: 3px; flex: 1; border-radius: 2px; background: #4b5563; transition: background .6s; }
+  .daynight i.day { background: #e8e6e0; box-shadow: 0 0 6px rgba(232,230,224,.45); }
+  .daynight i.night { background: #333844; box-shadow: 0 0 4px rgba(0,0,0,.4); }
+  .daynight span { color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .daynight span b { font-weight: 600; }
+  .daynight span b.day { color: #e8e6e0; }
+  .daynight span b.night { color: #7a8294; }
+
+  /* 图例面板 */
+  .legend {
+    background: #101319; border: 1px solid #1e232d; border-radius: 8px;
+    padding: 8px 12px; margin-bottom: 8px; font-size: 11.5px; color: var(--muted);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px;
+  }
+  .legend .lg { display: flex; align-items: center; gap: 7px; }
+  .lgbar { width: 26px; height: 3px; border-radius: 2px; background: #3a4150; flex-shrink: 0; }
+  .lgbar.day { background: #fbbf24; }
+  .lgbar.night { background: #6e7482; }
+  .lgbar.svc { background: var(--purple); }
+  .lgbar.save { background: var(--green); }
+  .lgbar.conn { background: var(--blue); }
+  .lgbar.err { background: var(--red); }
+  .lgbar.die { background: linear-gradient(90deg, #60a5fa 40%, #fb923c 60%); }
+  .legend .us {
+    font-size: 11px; font-weight: 600; padding: 0 6px; border: 1px solid #2dd4bf88;
+    border-radius: 4px; color: #2dd4bf; background: #2dd4bf14; line-height: 1.6;
+  }
+  .legend .tick { color: #3d4451; letter-spacing: 1px; }
+
+  /* 连续同类事件聚合条带（异常/拒绝/连接）：2px 实心彩色细条（类型色半透明），点击展开明细 */
+  .item.seg { padding: 2.5px 10px; min-height: 23px; align-items: center; margin: 4px 0; cursor: pointer; }
+  .item.seg:hover { background: rgba(255,255,255,.03); }
+  .item.seg .who { color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .item.seg .strip { display: flex; height: 2px; border-radius: 2px; overflow: hidden; gap: 1px; min-width: 0; }
+  .item.seg .seg-part { min-width: 0; height: 100%; }
+  .item.seg.err, .item.seg.deny { border-left-color: var(--red); background: rgba(248,113,113,.04); }
+  .item.seg.conn { border-left-color: var(--blue); background: rgba(96,165,250,.035); }
+  .item.seg.conn .who { color: var(--blue); }
+  /* 死亡条带：红色系边框，内部每段=死者玩家角色色（who 文本=死亡 ×N） */
+  .item.seg.die { border-left-color: var(--red); background: rgba(248,113,113,.055); }
+  .item.seg.die .who { color: #f0a0a0; }
+  /* 点击展开明细 */
+  .item .seg-detail { display: none; grid-column: 2; }
+  .item.open .seg-detail { display: block; }
+  .item .seg-detail .sd {
+    color: #6b7483; font-size: 11px; padding: 1px 0 1px 12px;
+    border-left: 1px dashed #2a313d; margin: 2px 0 2px 4px;
+  }
+  /* 崩溃转储/系统刷屏折叠组 */
+  .item.sys.fold { cursor: pointer; margin-top: 4px; }
+  .item.sys.fold:hover { background: rgba(255,255,255,.03); }
+  .item.sys.fold .body { color: var(--muted); }
+  /* 服务启停折叠组（停止/启动各一条） */
+  .item.sys.fold.bootfold { border-left-color: var(--purple); background: rgba(167,139,250,.05); }
+  .item.sys.fold.bootfold .who { color: var(--purple); }
+  .item.sys.fold.bootfold .body { color: #b7a6f0; }
+
+  /* 死亡标记线：与昼夜线同级的全宽 2px 细线，按连续死亡顺序拆成用户色段（段长∝次数） */
+  .diebar { display: flex; height: 2px; border-radius: 1px; overflow: hidden; gap: 1px; margin: 2px 0; cursor: default; }
+  .diebar .db-part { height: 100%; min-width: 2px; }
+
+  /* 整点刻度：每个整点后第一条消息的时间（该小时无消息不划），跨天带日期 */
+  .timebar {
+    color: #3d4451; text-align: center; font-size: 10.5px;
+    letter-spacing: 3px; margin: 4px 0 2px; user-select: none;
+  }
+  /* 昼夜切换分割线：全宽纯色细线，白天=太阳黄，夜晚=月灰（无图标） */
+  .dnline { display: flex; align-items: center; margin: 7px 0; }
+  .dnline::before, .dnline::after { content: ""; flex: 1; height: 2px; border-radius: 1px; }
+  .dnline.day::before, .dnline.day::after { background: rgba(251,191,36,.55); }
+  .dnline.night::before, .dnline.night::after { background: rgba(110,116,130,.45); }
+  /* 夜晚线中间的原点 */
+  .dnline .dot { width: 5px; height: 5px; border-radius: 50%; margin: 0 10px; align-self: center; flex-shrink: 0; }
+  .dnline.day .dot { background: #fbbf24; }
+  .dnline.night .dot { background: #6e7482; }
+  /* 白天线中间的天数数字：无背景框，与线段同轴居中、行高不放大（不撑缝隙），
+     margin 0 5px 使数字总宽 ≈ 夜线圆点总宽（5+20px），两端线段与夜线对齐 */
+  .dnline .num {
+    font-size: 15px; font-weight: 800; margin: 0 5px; flex-shrink: 0;
+    line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .dnline.day .num { color: #fbbf24; }
+  /* 聊天物品代码 [i:ID] → 物品徽章 */
+  .itemic {
+    display: inline-block; padding: 0 5px; margin: 0 1px;
+    border: 1px solid #3a4150; border-radius: 4px;
+    background: rgba(139,147,163,.1); color: #c9d2de;
+    font-size: 11.5px; line-height: 1.5;
+  }
+
+  .ctrl { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  input[type="text"], input[type="password"] {
+    background: #0a0c10; border: 1px solid var(--line); border-radius: 8px;
+    color: var(--txt); padding: 7px 12px; font-size: 13px; outline: none;
+  }
+  input[type="text"]:focus, input[type="password"]:focus { border-color: var(--blue); }
+  #msg { flex: 1; min-width: 160px; }
+  #token { width: 120px; }
+  .mode-switch { display: flex; gap: 4px; }
+  .mode-switch .btn { padding: 6px 9px; font-size: 12px; }
+  .mode-switch .btn.on { border-color: var(--blue); color: var(--blue); }
+  .offline {
+    border: 1px solid rgba(248,113,113,.35); background: rgba(248,113,113,.08);
+    color: var(--red); border-radius: 12px; padding: 16px; text-align: center; font-size: 14px; margin-bottom: 10px;
+  }
+  @media (max-width: 720px) {
+    .metrics { margin-left: 0; }
+    .item { grid-template-columns: 1fr; }
+    .item .t { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 onclick="toggleAuth()" title="点击显示管理入口" style="cursor:pointer; user-select:none">Terraria 服务器控制台<span>专用服状态面板</span></h1>
+    <div style="display:flex; gap:8px; align-items:center">
+      <span id="authState" style="font-size:12px; color:var(--muted)"></span>
+      <button class="btn" onclick="load()">刷新</button>
+    </div>
+  </header>
+
+  <div id="error" class="offline" style="display:none">API 不可达 —— 服务器离线或网络异常，自动重试中</div>
+
+  <div id="board" style="display:flex; flex-direction:column; flex:1; min-height:0">
+    <div class="statusbar">
+      <div class="row1">
+        <div class="online-box">
+          <div class="bignum" id="online">–</div>
+          <div>
+            <div class="who" id="names">现在没人在线</div>
+            <div class="who" style="margin-top:2px"><span class="dot off" id="dot"></span><span id="terraria">–</span> · 已运行 <span id="uptime">–</span></div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div class="m"><span class="k">CPU</span> <span class="v" id="cpu">–<small>%</small></span></div>
+          <div class="m"><span class="k">内存</span> <span class="v" id="memu">–</span><small> / <span id="memt">–</span>G</small></div>
+          <div class="m"><span class="k">磁盘</span> <span class="v" id="diskf">–</span><small> / <span id="diskt">–</span>G</small></div>
+          <div class="m"><span class="k">备份</span> <span class="v" id="bkcount">–<small> 份</small></span></div>
+        </div>
+      </div>
+      <div class="bars">
+        <div class="bar-item"><div class="bk"><span>CPU</span><span id="cpuTxt"></span></div><div class="bar"><i id="cpuBar"></i></div></div>
+        <div class="bar-item"><div class="bk"><span>内存<span id="swapTag"></span></span><span id="memTxt"></span></div><div class="bar"><i id="memBar"></i></div></div>
+        <div class="bar-item"><div class="bk"><span>磁盘</span><span id="diskTxt"></span></div><div class="bar"><i id="diskBar"></i></div></div>
+        <div class="bar-item"><div class="bk"><span>上行带宽</span><span id="netTxt"></span></div><div class="bar"><i id="netBar"></i></div></div>
+      </div>
+    </div>
+
+    <div class="console">
+      <div class="head">
+        <span class="k">事件流<span id="atStartTip" style="color:var(--muted); margin-left:8px; display:none">· 已到最早</span>
+          <button class="btn" style="padding:2px 8px; font-size:11px; margin-left:8px" onclick="toggleLegend()" id="legendBtn">点击查看图例</button>
+          <button class="btn" style="padding:2px 8px; font-size:11px; margin-left:8px" onclick="togglePcolors()" id="pcolorsBtn">点击查看玩家色</button></span>
+        <span class="k" id="logcount"></span>
+      </div>
+      <div id="legend" class="legend" style="display:none">
+        <div class="lg"><span class="lgbar day"></span>黄色线 = 进入白天（游戏内 4:30 AM）</div>
+        <div class="lg"><span class="lgbar night"></span>灰色线 = 进入夜晚（游戏内 7:30 PM）</div>
+        <div class="lg"><span class="lgbar svc"></span>紫色 = 服务器启动/停止（"Terraria Server v1.4.5.8" 是版本横幅）</div>
+        <div class="lg"><span class="lgbar save"></span>绿色 = 世界自动存档完成</div>
+        <div class="lg"><span class="lgbar conn"></span>蓝色细条 = 连接尝试（IP 已打码，点击展开明细）</div>
+        <div class="lg"><span class="lgbar err"></span>红色细条 = 区块异常 / 连接拒绝</div>
+        <div class="lg"><span class="lgbar die"></span>玩家死亡（彩色分段细线，段长∝次数）</div>
+        <div class="lg"><span class="lgbar usr"></span><span class="us">空气</span> 彩色方框 = 真实玩家</div>
+        <div class="lg"><span class="lgbar tick"></span><span class="tick">─── 22:00 ───</span> 整点刻度 = 每小时第一条消息的时间</div>
+      </div>
+      <div id="pcolors" class="legend" style="display:none"></div>
+      <div class="daynight"><i id="dnbar"></i><span id="dntxt">游戏时间 --:--</span></div>
+      <div class="logbox" id="logbox"></div>
+      <div class="ctrl">
+        <div id="authRow" style="display:none; gap:8px; align-items:center; flex:1; flex-wrap:wrap">
+          <input type="password" id="token" placeholder="管理令牌" autocomplete="off">
+          <button class="btn primary" onclick="auth()">鉴权</button>
+          <span id="authMsg" style="font-size:11px; color:var(--muted)"></span>
+        </div>
+        <div id="sendRow" style="display:none; gap:8px; align-items:center; flex:1; flex-wrap:wrap">
+          <div class="mode-switch">
+            <button class="btn on" id="m1" onclick="setMode('chat')">聊天</button>
+            <button class="btn" id="m2" onclick="setMode('raw')">命令</button>
+          </div>
+          <input type="text" id="msg" placeholder="给服内玩家发消息…" autocomplete="off">
+          <button class="btn primary" onclick="sendCmd()">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 本地双击打开时回退到本机面板端口；线上直接同源，无需配置
+const API = location.protocol === "file:" ? "http://127.0.0.1:19980" : "";
+const $ = id => document.getElementById(id);
+let lastSeq = 0;        // 增量游标（服务端单调 seq，杜绝秒级时间戳重复）
+let earliest = 0;      // 当前最早已加载时间（回溯用）
+let mode = "chat";
+// 时间分组 & 刻度线
+let lastMin = -1;
+let lastTick = 0;
+// 聚合条带状态（err/deny/conn 扫描噪音混合聚合；die 连续同类聚合）
+const SEG_CLASSES = { err: "异常", deny: "拒绝", die: "死亡", conn: "连接尝试" };
+const NOISE_CLS = { err: 1, deny: 1, conn: 1 };
+let segActive = false;   // 噪音聚合是否激活（真实玩家事件打断）
+let segCls = null, segEl = null, segParts = [];
+let segTypes = new Set();
+let initShown = false;   // "服务器初始化中…" 只合并显示一次
+
+const setBar = (id, pct, cls) => {
+  const el = $(id);
+  el.style.width = Math.min(100, Math.max(0, pct)) + "%";
+  el.className = cls || (pct >= 90 ? "hot" : pct >= 60 ? "warn" : "");
+};
+const fmtTime = ts => {
+  const d = new Date(ts * 1000);
+  const p = n => String(n).padStart(2, "0");
+  return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " +
+         p(d.getHours()) + ":" + p(d.getMinutes());
+};
+// 行内时间列只显示 HH:MM（日期由整点刻度条承担）；同分钟只显示第一条
+const fmtHM = ts => {
+  const d = new Date(ts * 1000);
+  const p = n => String(n).padStart(2, "0");
+  return p(d.getHours()) + ":" + p(d.getMinutes());
+};
+// 实时流时间列：分钟去重（跨行共享 lastMin），同分钟返回空串
+const timeCol = t => {
+  if (!t) return "";
+  const min = Math.floor(t / 60);
+  if (min === lastMin) return "";
+  lastMin = min;
+  return fmtHM(t);
+};
+const fmtG = mb => (mb / 1024).toFixed(1);
+const fmtUptime = since => {
+  const mins = Math.max(0, Math.floor(Date.now() / 1000 - since) / 60);
+  if (mins < 1) return "刚刚";
+  if (mins < 60) return Math.floor(mins) + " 分钟";
+  if (mins < 1440) return (mins / 60).toFixed(1) + " 小时";
+  return (mins / 1440).toFixed(1) + " 天";
+};
+// 玩家颜色：全部由服务端分配（/colors 返回 name -> color，先来先得 + 持久化，
+// 固定色库避开语义色）。固定色优先（扣哒粉 / 小T绿 / 空气灰 / Server 橙），未映射名字灰色。
+// 历史旧 AI"小T"已由服务端按时间迁移为"扣哒"（数据层处理），前端不做名字改写，避免误伤新小T。
+const COLORS = {};
+const FIXED_COLORS = { "空气": "#9ca3af", "Server": "#f97316", "扣哒": "#f472b6", "小T": "#4ade80" };
+const nameColor = n => FIXED_COLORS[n] || COLORS[n] || "#9ca3af";
+// 拉取服务端颜色映射，并给已渲染的徽章补色（/colors 与 /logs 并发时徽章可能先渲染成灰色）
+function syncColors() {
+  fetch(API + "/colors", { cache: "no-store" })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(j => {
+      Object.assign(COLORS, j.colors || {});
+      Object.assign(FIXED_COLORS, j.fixed || {});
+      document.querySelectorAll("#logbox .item .who").forEach(w => {
+        const c = nameColor(w.textContent);
+        if (c) { w.style.color = c; w.style.borderColor = c + "55"; w.style.background = c + "14"; }
+      });
+      renderPcolors();
+    })
+    .catch(() => {});
+}
+syncColors();
+setInterval(syncColors, 60000);
+
+// 玩家色面板：列出服务端分配的玩家 → 颜色（含固定色）
+function renderPcolors() {
+  const box = $("pcolors");
+  if (!box) return;
+  const all = {};
+  Object.assign(all, COLORS);
+  Object.assign(all, FIXED_COLORS);
+  const names = Object.keys(all).sort();
+  box.innerHTML = "";
+  if (!names.length) {
+    box.innerHTML = "<div class='lg'><span>暂无玩家记录（有人上线后自动出现）</span></div>";
+    return;
+  }
+  for (const n of names) {
+    const row = document.createElement("div");
+    row.className = "lg";
+    const sw = document.createElement("span");
+    sw.className = "us";
+    sw.style.color = all[n];
+    sw.style.borderColor = all[n] + "88";
+    sw.style.background = all[n] + "14";
+    sw.textContent = n;
+    row.appendChild(sw);
+    box.appendChild(row);
+  }
+}
+function togglePcolors() {
+  const box = $("pcolors");
+  const btn = $("pcolorsBtn");
+  const hidden = box.style.display === "none";
+  box.style.display = hidden ? "" : "none";
+  btn.textContent = hidden ? "收起玩家色" : "点击查看玩家色";
+  if (hidden) renderPcolors();
+}
+// 日志规整：进度刷屏行全丢弃；"Saving world" 系列一律丢弃；time 探针输出不显示
+const norm = msg => {
+  if (/Settling liquids \d+%/.test(msg)) return null;
+  if (/Validating world save: \d+%/.test(msg)) return null;
+  if (/Saving world data: \d+%/.test(msg)) return null;
+  if (/^Saving world/.test(msg)) return null;
+  if (/^Loading world data: \d+%/.test(msg)) return null;
+  if (/^:?\s*Time: \d/.test(msg)) return null;
+  if (/^:?\s*时间：\d/.test(msg)) return null;
+  if (/^:?\s*$/.test(msg)) return null;   // 纯冒号/空行（控制台残留回显）
+  if (/^Type 'help'/.test(msg)) return null;
+  if (/Error Logging Enabled/.test(msg)) return null;
+  if (/-- (Boot|Reboot) /.test(msg)) return null;
+  if (/^\s*at Terraria\./.test(msg)) return null;
+  if (/Backing up world file/.test(msg)) return "世界已保存";
+  return msg;
+};
+// 事件解析 → {cls, who, body, name?}
+// chat/io 玩家名徽章；save/sys/boot/deny/err/die/event 状态行；err/deny/die 连续聚合
+const parseEvent = msg => {
+  let m;
+  /* ---- IL 注入事件（TerrariaServer.exe 插桩输出，2026-09-02）---- */
+  // 容错：IL 输出可能带 ": " 前缀；正常时原始行被服务端过滤、只显示烘焙的昼夜分割线
+  if (m = msg.match(/^:?\s*\[DAY\]/))
+    return { cls: "event", who: "昼夜", body: "进入白天（游戏内 4:30 AM）" };
+  if (m = msg.match(/^:?\s*\[NIGHT\]/))
+    return { cls: "event", who: "昼夜", body: "进入夜晚（游戏内 7:30 PM）" };
+  if (m = msg.match(/^:?\s*KILLME:\s*(.+)$/))
+    return { cls: "die", who: "死亡", body: m[1] + " 死亡", name: m[1] };
+  // patched6 注入行：入侵/世界事件 [EVENT] …、城镇NPC到达 [NPC] xx 已到达！
+  if (m = msg.match(/^:?\s*\[EVENT\]\s*(.+)$/))
+    return { cls: "event", who: "事件", body: m[1] };
+  if (m = msg.match(/^:?\s*\[NPC\]\s*(.+)$/))
+    return { cls: "event", who: "NPC", body: m[1] };
+  if (m = msg.match(/^:?\s*<([^>]+)>\s?(.*)$/))
+    return { cls: "chat", who: m[1], body: m[2] || "…", name: m[1] };
+  if (m = msg.match(/^:?\s*(.+?)\s+has\s+joined\.?$/))
+    return { cls: "io", who: m[1], body: "→ 加入了世界", name: m[1] };
+  if (m = msg.match(/^:?\s*(.+?)\s+has\s+left\.?$/))
+    return { cls: "io", who: m[1], body: "← 离开了世界", name: m[1] };
+  if (msg === "世界已保存")
+    return { cls: "save", who: "自动存档", body: "" };
+  if (m = msg.match(/^Invariant Failed: Error on message (?:[^ @]+) @[^ (]+\(?([^)]*)/))
+    return { cls: "err", who: "区块异常", body: "区块同步错误 · " + (m[1] || "未知"), name: m[1] || "未知" };
+  if (/Error on message \d+/.test(msg))
+    return { cls: "err", who: "区块异常", body: msg, name: "区块" };
+  if (m = msg.match(/^:?\s*([\d.]+):\d+ is connecting\.\.\./))
+    return { cls: "conn", who: "连接尝试", name: m[1], body: m[1] + " 尝试连接" };
+  if (/lost connection/.test(msg))
+    return { cls: "conn", who: "连接", name: "断开", body: msg };
+  if (/Terraria Server v/.test(msg))
+    return { cls: "boot", who: "服务", body: msg };
+  if (/Server started|Listening on port/.test(msg))
+    return { cls: "boot", who: "服务", body: "服务器启动完成，监听 7777" };
+  if (/Stopped Terraria|Deactivated successfully/.test(msg))
+    return { cls: "boot", who: "服务", body: "服务器已停止" };
+  if (/Stopping Terraria/.test(msg))
+    return { cls: "boot", who: "服务", body: "服务器正在停止…" };
+  if (/was booted/.test(msg))
+    return { cls: "deny", who: "拒绝", body: msg, name: "拒绝" };
+  /* ---- 世界状态消息全集（wiki Status messages；若服务器广播到控制台即生效） ---- */
+  if (m = msg.match(/^\[BLOODMOON\]/))
+    return { cls: "event", who: "血月", body: "血月降临——怪物浪潮来袭，黑夜无尽!" };
+  if (/The Blood Moon is rising/.test(msg))
+    return { cls: "event", who: "血月", body: "血月降临——怪物浪潮来袭，黑夜无尽!" };
+  if (/solar eclipse is (happening|occurring)/i.test(msg))
+    return { cls: "event", who: "日食", body: "日食发生——白天也刷怪，危险升级!" };
+  if (/goblin army|Frost Legion|Pirates are approaching|pirates have arrived|pirates have been defeated|Martians are invading|martians have been defeated|Celestial creatures are invading/.test(msg))
+    return { cls: "event", who: "入侵", body: msg };
+  if (/has awoken/.test(msg))
+    return { cls: "event", who: "Boss", body: msg + " —— Boss 已苏醒!" };
+  if (/has been defeated|have been defeated/.test(msg))
+    return { cls: "event", who: "Boss", body: msg + " —— 击杀成功!" };
+  if (m = msg.match(/^(.+?)\s+was slain by\s+(.+)$/))
+    return { cls: "die", who: "死亡", body: m[1] + " 被 " + m[2] + " 击杀", name: m[1] };
+  if (/enabled PvP|joined the (red|green|blue|yellow|pink) team|is no longer on a team/.test(msg))
+    return { cls: "io", who: "玩家", body: msg };
+  return { cls: "sys", who: "系统", body: msg };
+};
+
+const el = (cls, text) => {
+  const e = document.createElement("span");
+  e.className = cls;
+  e.textContent = text;
+  return e;
+};
+
+// 玩家名徽章（方框 + 用户色）
+function badge(name) {
+  const b = el("who", name);
+  const c = nameColor(name);
+  b.style.color = c;
+  b.style.borderColor = c + "55";
+  b.style.background = c + "14";
+  return b;
+}
+
+function makeItem(l, ev, tText) {
+  const row = document.createElement("div");
+  row.className = "item " + ev.cls;
+  row.dataset.key = l.t + "|" + l.msg;
+  const body = document.createElement("span");
+  body.className = "body";
+  body.innerHTML = renderBody(ev.body);
+  // 玩家徽章只用于真实玩家（chat/io）；Server/IP/断开等状态名不套框
+  row.appendChild((ev.name && (ev.cls === "chat" || ev.cls === "io")) ? badge(ev.name) : el("who", ev.who));
+  if (ev.body) row.appendChild(body);
+  row.appendChild(el("t", tText));
+  return row;
+}
+
+// 连续同类事件聚合条带：段顶 1px 用户色描边，点击展开明细
+function makeSegRow(l, ev, tText) {
+  const row = document.createElement("div");
+  row.className = "item seg " + ev.cls;
+  row.dataset.key = "seg:" + ev.cls + ":" + (l.t + "|" + l.msg);
+  const who = el("who", SEG_CLASSES[ev.cls]);
+  who.style.color = ev.cls === "conn" ? "var(--blue)" : "var(--muted)";
+  const strip = document.createElement("div");
+  strip.className = "strip";
+  const detail = document.createElement("div");
+  detail.className = "seg-detail";
+  row.append(who, strip, el("t", tText), detail);
+  row._strip = strip;
+  row._who = who;
+  row._detail = detail;
+  row.onclick = () => row.classList.toggle("open");
+  return row;
+}
+// 聚合条带段色：按 IP 确定性 hash 到彩色板（半透明，花而不喧宾夺主），同 IP 永远同色
+const SEG_STRIP_COLORS = ["#60a5fa", "#f87171", "#fb923c", "#fbbf24", "#34d399", "#a78bfa", "#22d3ee", "#e879f9"];
+const segPartColor = n => {
+  let h = 7;
+  for (const ch of String(n)) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return SEG_STRIP_COLORS[h % SEG_STRIP_COLORS.length] + "99";
+};
+// 渲染聚合条带内容（2px 实心彩色细条 + 明细；IP 打码，count=1 不显示 ×1）
+// 死亡(die)特殊：每段颜色=死者玩家角色色、明细直接显示玩家名；其余噪音段按 IP hash 彩色板
+function renderSegStrip(segEl, parts, types) {
+  const total = parts.reduce((a, p) => a + p.count, 0);
+  const isDie = segEl.classList.contains("die");
+  const label = types.size === 1 ? SEG_CLASSES[[...types][0]] : "连接尝试";
+  segEl._who.textContent = label + " ×" + total;
+  segEl._strip.innerHTML = "";
+  segEl._detail.innerHTML = "";
+  for (const p of parts) {
+    const shown = isDie ? p.name : maskIp(p.name);
+    const suf = p.count > 1 ? " ×" + p.count : "";
+    const part = document.createElement("div");
+    part.className = "seg-part";
+    part.style.flexGrow = p.count;
+    part.style.background = isDie ? nameColor(p.name) : segPartColor(p.name);
+    part.title = shown + suf;
+    segEl._strip.appendChild(part);
+    const sd = document.createElement("div");
+    sd.className = "sd";
+    sd.textContent = shown + suf;
+    if (isDie) sd.style.color = nameColor(p.name);
+    segEl._detail.appendChild(sd);
+  }
+}
+function appendSeg(ev) {
+  segTypes.add(ev.cls);
+  const last = segParts[segParts.length - 1];
+  if (last && last.name === ev.name) last.count++;
+  else segParts.push({ name: ev.name, count: 1, cls: ev.cls });
+  renderSegStrip(segEl, segParts, segTypes);
+}
+function flushSeg() { segActive = false; segCls = null; segEl = null; segParts = []; segTypes = new Set(); }
+
+// 崩溃转储 / systemd 重启刷屏：连续同类系统输出折叠成一条可展开组（不删行）
+const CRASH = /^(at (?:\(?wrapper|System|Microsoft)|\d+\/\d+\/\d+ \d+:\d+:\d+ (?:AM|PM): |Thread: |Culture: |Exception: |Unhandled Exception|File name: |HResult: |FATAL UNHANDLED|\[ERROR\]|=+$|^terraria\.service: |^tail: )/;
+let crashBuf = [];   // [{t, msg}]
+// 服务启停流程折叠缓冲
+let bootFlow = null;   // "stop" | "start"
+let bootBuf = [];
+// 全局已知的启动段时间戳集合：用于实时 pushRow / 回溯 prependLines 跨异步边界的 30s 去重
+const seenStartTs = new Set();
+const seenStopTs = new Set();
+const dupBootNear = (t, kind) => {
+  const set = kind === "start" ? seenStartTs : seenStopTs;
+  for (const x of set) if (Math.abs(t - x) < 30) return true;
+  return false;
+};
+function flushBoot(box) {
+  if (!bootFlow || !bootBuf.length) { bootFlow = null; bootBuf = []; return; }
+  const isStop = bootFlow === "stop";
+  const first = bootBuf[0];
+  if (first.t && (!earliest || first.t < earliest)) earliest = first.t;
+  const row = document.createElement("div");
+  row.className = "item sys fold bootfold";
+  row.dataset.key = "boot:" + first.t + ":" + (isStop ? "stop" : "start");
+  // 折叠行记录被吞掉的原始行 key：回溯去重时一并标记，防止同段被再折叠
+  row.dataset.lines = bootBuf.map(x => x.t + "|" + x.msg).join("\u0001");
+  const who = el("who", "服务");
+  const body = el("body", isStop ? "服务器已停止" : "服务器启动完成");
+  const detail = document.createElement("div");
+  detail.className = "seg-detail";
+  for (const l of bootBuf) {
+    const sd = document.createElement("div");
+    sd.className = "sd";
+    sd.textContent = (l.t ? fmtTime(l.t) + "  " : "") + l.msg;
+    detail.appendChild(sd);
+  }
+  row.append(who, body, el("t", timeCol(first.t)), detail);
+  row.onclick = () => row.classList.toggle("open");
+  box.appendChild(row);
+  (isStop ? seenStopTs : seenStartTs).add(first.t);
+  bootFlow = null;
+  bootBuf = [];
+}
+function flushCrash(box) {
+  if (!crashBuf.length) return;
+  // 单条不折叠：直接显示原文（×1 折叠没有意义）
+  if (crashBuf.length === 1) {
+    const l = crashBuf[0];
+    box.appendChild(makeItem(l, { cls: "sys", who: "系统", body: l.msg }, timeCol(l.t)));
+    crashBuf = [];
+    return;
+  }
+  const first = crashBuf[0];
+  const row = document.createElement("div");
+  row.className = "item sys fold";
+  row.dataset.key = "crash:" + first.t + ":" + crashBuf.length + ":" + first.msg.slice(0, 20);
+  row.dataset.lines = crashBuf.map(x => x.t + "|" + x.msg).join("\u0001");
+  const who = el("who", "系统");
+  const body = el("body", "异常转储 ×" + crashBuf.length + "（点击展开）");
+  const detail = document.createElement("div");
+  detail.className = "seg-detail";
+  for (const l of crashBuf) {
+    const sd = document.createElement("div");
+    sd.className = "sd";
+    sd.textContent = (l.t ? fmtTime(l.t) + "  " : "") + l.msg;
+    detail.appendChild(sd);
+  }
+  row.append(who, body, el("t", timeCol(first.t)), detail);
+  row.onclick = () => row.classList.toggle("open");
+  box.appendChild(row);
+  crashBuf = [];
+}
+
+// 连续自动存档聚合：两次存档间无其他已渲染事件 → 合并成"自动存档 ×N"。
+// 用 DOM 判断（跳过装饰行后 box 最后一行是否仍是本存档行）而非标志位：
+// 连接尝试/聚合条带只更新文本不产生新行 → 存档跨噪音合并；聊天/进出等真实事件产生新行 → 打断。
+let saveGroup = null;   // {row, count, firstT}
+const lastRealEl = box => {
+  let el = box.lastElementChild;
+  while (el && (el.classList.contains("timebar") || el.classList.contains("diebar") || el.classList.contains("dnline"))) el = el.previousElementSibling;
+  return el;
+};
+function savePush(l, m, box) {
+  if (saveGroup && lastRealEl(box) === saveGroup.row) {
+    // 连续存档：升级 ×N
+    saveGroup.count++;
+    const row = saveGroup.row;
+    row.classList.add("fold");
+    row.dataset.key = "save:" + saveGroup.firstT + ":" + saveGroup.count;
+    row.dataset.lines += "\u0001" + l.t + "|世界已保存";
+    row.querySelector(".body").textContent = "自动存档 ×" + saveGroup.count + "（点击展开）";
+    const sd = document.createElement("div");
+    sd.className = "sd";
+    sd.textContent = fmtTime(l.t) + "  " + m;
+    row.querySelector(".seg-detail").appendChild(sd);
+    return;
+  }
+  // 开新组：创建单行"自动存档"（点击可展开本次时间）
+  const row = document.createElement("div");
+  row.className = "item save";
+  row.dataset.key = l.t + "|世界已保存";
+  const detail = document.createElement("div");
+  detail.className = "seg-detail";
+  const sd = document.createElement("div");
+  sd.className = "sd";
+  sd.textContent = fmtTime(l.t) + "  " + m;
+  detail.appendChild(sd);
+  row.append(el("who", "自动存档"), el("body", ""), el("t", timeCol(l.t)), detail);
+  row.onclick = () => row.classList.toggle("open");
+  box.appendChild(row);
+  saveGroup = { row, count: 1, firstT: l.t };
+}
+let dieBuf = [];   // [{name, count}]
+function flushDie(box) {
+  if (!dieBuf.length) return;
+  const line = document.createElement("div");
+  line.className = "diebar";
+  line.title = "死亡 " + dieBuf.map(p => p.name + " ×" + p.count).join(" · ");
+  for (const p of dieBuf) {
+    const seg = document.createElement("div");
+    seg.className = "db-part";
+    seg.style.flexGrow = p.count;
+    seg.style.background = nameColor(p.name);
+    line.appendChild(seg);
+  }
+  box.appendChild(line);
+  dieBuf = [];
+}
+
+// 启动进度合并：Resetting / Loading world data N% 全部吸收为一条"服务器初始化中…"
+function initProgressItem(l, tText) {
+  if (!/^Resetting game objects \d+%|^Loading world data: \d+%/.test(l.msg)) return null;
+  if (initShown) return null;
+  initShown = true;
+  return makeItem({ ...l }, { cls: "sys", who: "系统", body: "服务器初始化中…" }, tText);
+}
+
+// 整点刻度：每个整点后第一条消息显示其真实时间（该小时无消息不划），每天第一条带日期
+let lastTimebarDate = "";   // 上一条刻度条的日期（每天只标一次日期）
+function timebarEl(t) {
+  const d = new Date(t * 1000);
+  const p = n => String(n).padStart(2, "0");
+  const date = p(d.getMonth() + 1) + "-" + p(d.getDate());
+  const hm = p(d.getHours()) + ":" + p(d.getMinutes());
+  const withDate = date !== lastTimebarDate;
+  if (withDate) lastTimebarDate = date;
+  const tb = document.createElement("div");
+  tb.className = "timebar";
+  tb.textContent = withDate ? "─── " + date + " " + hm + " ───" : "─── " + hm + " ───";
+  return tb;
+}
+
+// 昼夜切换分割线：烘焙行（服务端 /logs 下发，带准确 ts/type/dn），直接渲染，永不错位
+function markerEl(mk, keyMsg) {
+  const d = document.createElement("div");
+  d.className = "dnline " + mk.type;
+  if (keyMsg) d.dataset.key = mk.ts + "|" + keyMsg;   // 与原始行 key 一致 → 回溯按行去重
+  d.title = (mk.type === "day" ? "白天开始 " : "夜晚开始 ") + fmtTime(mk.ts) + (mk.dn ? " · 世界第 " + mk.dn + " 天" : "");
+  if (mk.type === "day") {
+    // 白天线：悬浮无框数字（像原点一样单独）
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = mk.dn || "";
+    d.appendChild(num);
+  } else {
+    // 夜晚线：保持原点圆点
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    d.appendChild(dot);
+  }
+  return d;
+}
+
+// 聊天物品代码 [i/xxx:ID] → 物品名徽章（映射来自反编译的本地化文件）
+const ITEMS = {};
+fetch(API + "/items.json").then(r => r.json()).then(j => {
+  Object.assign(ITEMS, j);
+  // 映射加载完成前已渲染的物品徽章：补上名字（用 data-id/data-stack，保留数量）
+  document.querySelectorAll("#logbox .itemic").forEach(sp => {
+    const id = sp.dataset.id;
+    if (ITEMS[id]) {
+      const stack = parseInt(sp.dataset.stack || "0");
+      sp.textContent = ITEMS[id] + (stack > 1 ? " ×" + stack : "");
+    }
+  });
+}).catch(() => {});
+function renderBody(text) {
+  let s = String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s = s.replace(/\[i\/?([^\]]*):(\d+)\]/g, (mm, mods, id) => {
+    const m = mods.match(/s(\d+)/);
+    const stack = m ? parseInt(m[1]) : 0;
+    const name = ITEMS[id] || "物品" + id;
+    return "<span class='itemic' data-id='" + id + "' data-stack='" + stack + "' title='物品ID " + id + (stack > 1 ? " · 数量 " + stack : "") + "'>" +
+           name + (stack > 1 ? " ×" + stack : "") + "</span>";
+  });
+  // IP 打码：保留首段完整，其余每段/端口只留首字符（195.96.139.187:2356 → 195.9*.1**.1**:2***）
+  // 跳过版本号（如 v1.4.5.8：无端口且高段数 <2）
+  s = s.replace(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d+))?/g, (mm, a, b, c, d, port) => {
+    const bigs = [a, b, c, d].filter(x => parseInt(x) >= 100).length;
+    if (!port && bigs < 2) return mm;
+    return maskIp(mm);
+  });
+  return s;
+}
+// IP 掩码
+const maskIp = s => {
+  const m = String(s).match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d+))?$/);
+  if (!m) return s;
+  const p = x => (x.length <= 1 ? "*" : x[0] + "*".repeat(x.length - 1));
+  let out = m[1] + "." + p(m[2]) + "." + p(m[3]) + "." + p(m[4]);
+  if (m[5]) out += ":" + p(m[5]);
+  return out;
+};
+
+function pushRow(l) {
+  // 烘焙昼夜标记行（服务端 /logs 下发，固定数据）：直接画分割线，先收掉待聚合缓冲
+  if (l.type === "day" || l.type === "night") {
+    const box = $("logbox");
+    flushCrash(box); flushBoot(box); flushDie(box); flushSeg();
+    if (!earliest || (l.t && l.t < earliest)) earliest = l.t;
+    box.appendChild(markerEl({ ts: l.t, type: l.type, dn: l.dn }, l.msg));
+    return;
+  }
+  const m = norm(l.msg);
+  if (m === null) return;
+  const box = $("logbox");
+  // 服务启停流程聚合：停止段/启动段各自折叠成一条（可展开明细），
+  // 流程内的 `:`、崩溃栈等杂行全部收进折叠组，不再散落
+  if (bootFlow && CRASH.test(m)) { bootBuf.push(l); return; }
+  if (/服务器正在停止|Stopping Terraria/.test(m)) {
+    flushBoot(box); flushCrash(box);
+    bootFlow = "stop"; bootBuf = [l];
+    return;
+  }
+  if (/服务器已停止|Stopped Terraria|Deactivated successfully/.test(m)) {
+    if (bootFlow !== "stop") { flushCrash(box); bootFlow = "stop"; bootBuf = []; }
+    bootBuf.push(l);
+    flushBoot(box);
+    return;
+  }
+  if (/^Started Terraria|Terraria Server v/.test(m)) {
+    if (bootFlow !== "start") {
+      // journal 偶发重复推送横幅：30s 内已记录的 start 段则丢弃（与 box 查询/回溯同步去重）
+      if (l.t && dupBootNear(l.t, "start")) return;
+      flushBoot(box); flushCrash(box); bootFlow = "start"; bootBuf = [];
+    }
+    // 同内容 5 秒内重复（横幅常打印两次）不入栈，避免同段被拆成多条折叠
+    const prev = bootBuf[bootBuf.length - 1];
+    if (prev && l.t && prev.t && l.t - prev.t < 5 && prev.msg === m) return;
+    bootBuf.push(l);
+    return;
+  }
+  if (/启动完成|Server started|Listening on port/.test(m)) {
+    if (bootFlow !== "start") {
+      // journal 偶发重复推送"完成"标志：30s 内已记录的 start 段则丢弃
+      if (l.t && dupBootNear(l.t, "start")) return;
+      flushCrash(box); bootFlow = "start"; bootBuf = [];
+    }
+    const prev = bootBuf[bootBuf.length - 1];
+    if (prev && l.t && prev.t && l.t - prev.t < 5 && prev.msg === m) { flushBoot(box); return; }
+    bootBuf.push(l);
+    flushBoot(box);
+    return;
+  }
+  // 崩溃转储/systemd 刷屏：累积折叠，遇其他事件先 flush
+  if (CRASH.test(m)) { crashBuf.push(l); if (l.t && (!earliest || l.t < earliest)) earliest = l.t; return; }
+  flushCrash(box);
+  flushBoot(box);   // 非流程行到达时若有未闭合的启停段也收掉
+  const ev = parseEvent(m);
+  const meaningful = MEANINGFUL.includes(ev.cls);
+  // 整点刻度线（该整点后第一条消息的时间）：仅有意义事件触发，扫描噪音不划刻度
+  let tText = "";
+  if (l.t) {
+    if (meaningful && lastTick && Math.floor(l.t / 3600) !== Math.floor(lastTick / 3600)) box.appendChild(timebarEl(l.t));
+    if (meaningful) lastTick = l.t;
+    tText = timeCol(l.t);
+  }
+  // boot 相同内容 5 秒内重复（每次启动横幅打印两次）只显示一条
+  if (ev.cls === "boot") {
+    if (lastBootMsg && l.t && l.t - lastBootT < 5 && ev.body === lastBootMsg) return;
+    if (l.t) { lastBootT = l.t; lastBootMsg = ev.body; }
+  }
+  // 启动进度行：100 行合并为一条
+  const ip = initProgressItem(l, tText);
+  if (ip) { flushDie(box); flushSeg(); box.appendChild(ip); return; }
+  if (/^Resetting game objects \d+%/.test(m)) return;
+  // 扫描噪音（连接/拒绝/异常）：混合持续聚合，直到真实玩家事件打断
+  if (NOISE_CLS[ev.cls]) {
+    flushDie(box);
+    if (segActive) {
+      appendSeg(ev);
+    } else {
+      flushSeg();
+      segActive = true;
+      segCls = ev.cls;
+      segEl = makeSegRow(l, ev, tText);
+      box.appendChild(segEl);
+      appendSeg(ev);
+    }
+  } else if (ev.cls === "save") {
+    // 连续存档聚合：两次存档间无其他已渲染事件 → 合并为"自动存档 ×N"（点击展开每次时间）；
+    // 连接尝试等扫描噪音不打断（seg 继续累积，跨存档合并成一个大条带）
+    flushDie(box);
+    savePush(l, m, box);
+  } else if (ev.cls === "die") {
+    // 死亡：折叠成可展开条带，每段颜色=死者玩家角色色（谁死了一目了然）；
+    // 与连接噪音不混聚，玩家聊天等真实事件到达后条带定稿留存为一行
+    if (!segActive || segCls !== "die") {
+      flushSeg();
+      segActive = true; segCls = "die";
+      segEl = makeSegRow(l, ev, tText);
+      box.appendChild(segEl);
+    }
+    appendSeg(ev);
+  } else {
+    flushDie(box);
+    flushSeg();
+    box.appendChild(makeItem(l, ev, tText));
+  }
+  if (!earliest || (l.t && l.t < earliest)) earliest = l.t;
+  while (box.children.length > 800) box.removeChild(box.firstChild);
+}
+
+function prependLines(lines) {
+  const box = $("logbox");
+  flushSeg();
+  const existing = new Set();
+  for (const r of box.children) {
+    if (r.dataset.key) existing.add(r.dataset.key);
+    // 折叠行（启停/崩溃）把原始行吞进了明细：一并标记为已存在，防止同段被再次折叠
+    if (r.dataset.lines) for (const k of r.dataset.lines.split("\u0001")) existing.add(k);
+  }
+  // 先过滤出可见行
+  const visible = [];
+  for (const l of lines) {
+    const m = norm(l.msg);
+    if (m === null) continue;
+    const key = l.t + "|" + l.msg;
+    if (existing.has(key)) continue;
+    existing.add(key);
+    visible.push({ l, m });
+  }
+  const frag = document.createDocumentFragment();
+  // 回溯也补刻度线：与 box 现有最早行 / 上一条可见行跨整点则插线（跨天带日期）
+  let prevT = null;
+  const first = box.querySelector(".item");
+  if (first && first.dataset.key) prevT = parseInt(first.dataset.key.split("|")[0]) || null;
+  // 回溯时间列：分钟去重（初始 = box 现有最早行分钟；回溯行更早，从它往后推进）
+  let localMin = null;
+  if (first && first.dataset.key) {
+    const t0 = parseInt(first.dataset.key.split("|")[0]) || 0;
+    if (t0) localMin = Math.floor(t0 / 60);
+  }
+  const timeColL = t => {
+    if (!t) return "";
+    const min = Math.floor(t / 60);
+    if (min === localMin) return "";
+    localMin = min;
+    return fmtHM(t);
+  };
+  // 回溯局部聚合（扫描噪音混合）+ 局部 boot 去重（相同内容 5 秒内）+ 局部死亡线
+  let localSeg = null, localParts = [], localTypes = new Set(), localBootT = 0, localBootMsg = "";
+  let localDie = [];   // [{name, count}]
+  const localAppend = ev => {
+    localTypes.add(ev.cls);
+    const last = localParts[localParts.length - 1];
+    if (last && last.name === ev.name) last.count++;
+    else localParts.push({ name: ev.name, count: 1, cls: ev.cls });
+    renderSegStrip(localSeg, localParts, localTypes);
+  };
+  const localDieBar = () => {
+    if (!localDie.length) return;
+    const line = document.createElement("div");
+    line.className = "diebar";
+    line.title = "死亡 " + localDie.map(p => p.name + " ×" + p.count).join(" · ");
+    for (const p of localDie) {
+      const seg = document.createElement("div");
+      seg.className = "db-part";
+      seg.style.flexGrow = p.count;
+      seg.style.background = nameColor(p.name);
+      line.appendChild(seg);
+    }
+    frag.appendChild(line);
+    localDie = [];
+  };
+  // 回溯局部崩溃折叠
+  let localCrash = [];
+  const localCrashBar = () => {
+    if (!localCrash.length) return;
+    const first = localCrash[0];
+    const row = document.createElement("div");
+    row.className = "item sys fold";
+    row.dataset.key = "crash:" + first.t + ":" + localCrash.length + ":" + first.msg.slice(0, 20);
+    row.dataset.lines = localCrash.map(x => x.t + "|" + x.msg).join("\u0001");
+    const who = el("who", "系统");
+    const body = el("body", "异常转储 ×" + localCrash.length + "（点击展开）");
+    const detail = document.createElement("div");
+    detail.className = "seg-detail";
+    for (const l of localCrash) {
+      const sd = document.createElement("div");
+      sd.className = "sd";
+      sd.textContent = (l.t ? fmtTime(l.t) + "  " : "") + l.msg;
+      detail.appendChild(sd);
+    }
+    row.append(who, body, el("t", timeColL(first.t)), detail);
+    row.onclick = () => row.classList.toggle("open");
+    frag.appendChild(row);
+    localCrash = [];
+  };
+  // 回溯局部启停流程折叠（与实时一致：停止/启动各一条）
+  let localBootFlow = null, localBootBuf = [];
+  let localLastStartFlushT = 0, localLastStopFlushT = 0;
+  const localBootBar = () => {
+    if (!localBootFlow || !localBootBuf.length) { localBootFlow = null; localBootBuf = []; return; }
+    const isStop = localBootFlow === "stop";
+    const first = localBootBuf[0];
+    const row = document.createElement("div");
+    row.className = "item sys fold bootfold";
+    row.dataset.key = "boot:" + first.t + ":" + (isStop ? "stop" : "start");
+    row.dataset.lines = localBootBuf.map(x => x.t + "|" + x.msg).join("\u0001");
+    const who = el("who", "服务");
+    const body = el("body", isStop ? "服务器已停止" : "服务器启动完成");
+    const detail = document.createElement("div");
+    detail.className = "seg-detail";
+    for (const l of localBootBuf) {
+      const sd = document.createElement("div");
+      sd.className = "sd";
+      sd.textContent = (l.t ? fmtTime(l.t) + "  " : "") + l.msg;
+      detail.appendChild(sd);
+    }
+    row.append(who, body, el("t", timeColL(first.t)), detail);
+    row.onclick = () => row.classList.toggle("open");
+    frag.appendChild(row);
+    (isStop ? seenStopTs : seenStartTs).add(first.t);
+    localBootFlow = null;
+    localBootBuf = [];
+  };
+  // 回溯局部连续存档聚合（frag 最后一行判断，与实时 DOM 判断一致）
+  let localSaveGroup = null;
+  const localSavePush = (l, m) => {
+    let lastEl = frag.lastElementChild;
+    while (lastEl && (lastEl.classList.contains("timebar") || lastEl.classList.contains("diebar") || lastEl.classList.contains("dnline"))) lastEl = lastEl.previousElementSibling;
+    if (localSaveGroup && lastEl === localSaveGroup.row) {
+      localSaveGroup.count++;
+      const row = localSaveGroup.row;
+      row.classList.add("fold");
+      row.dataset.key = "save:" + localSaveGroup.firstT + ":" + localSaveGroup.count;
+      row.dataset.lines += "\u0001" + l.t + "|世界已保存";
+      row.querySelector(".body").textContent = "自动存档 ×" + localSaveGroup.count + "（点击展开）";
+      const sd = document.createElement("div");
+      sd.className = "sd";
+      sd.textContent = fmtTime(l.t) + "  " + m;
+      row.querySelector(".seg-detail").appendChild(sd);
+      return;
+    }
+    const row = document.createElement("div");
+    row.className = "item save";
+    row.dataset.key = l.t + "|世界已保存";
+    const detail = document.createElement("div");
+    detail.className = "seg-detail";
+    const sd = document.createElement("div");
+    sd.className = "sd";
+    sd.textContent = fmtTime(l.t) + "  " + m;
+    detail.appendChild(sd);
+    row.append(el("who", "自动存档"), el("body", ""), el("t", timeColL(l.t)), detail);
+    row.onclick = () => row.classList.toggle("open");
+    frag.appendChild(row);
+    localSaveGroup = { row, count: 1, firstT: l.t };
+  };
+  for (const { l, m } of visible) {
+    // 启停流程聚合（回溯）：流程内杂行（崩溃栈/冒号）收进折叠组
+    if (localBootFlow && CRASH.test(m)) { localBootBuf.push(l); continue; }
+    if (/服务器正在停止|Stopping Terraria/.test(m)) {
+      localBootBar(); localCrashBar();
+      localBootFlow = "stop"; localBootBuf = [l];
+      continue;
+    }
+    if (/服务器已停止|Stopped Terraria|Deactivated successfully/.test(m)) {
+      if (localBootFlow !== "stop") { localCrashBar(); localBootFlow = "stop"; localBootBuf = []; }
+      localBootBuf.push(l);
+      localBootBar();
+      continue;
+    }
+    if (/^Started Terraria|Terraria Server v/.test(m)) {
+      if (localBootFlow !== "start") {
+        if (l.t && dupBootNear(l.t, "start")) continue;
+        localBootBar(); localCrashBar(); localBootFlow = "start"; localBootBuf = [];
+      }
+      const prev = localBootBuf[localBootBuf.length - 1];
+      if (prev && l.t && prev.t && l.t - prev.t < 5 && prev.msg === m) continue;
+      localBootBuf.push(l);
+      continue;
+    }
+    if (/启动完成|Server started|Listening on port/.test(m)) {
+      if (localBootFlow !== "start") {
+        if (l.t && dupBootNear(l.t, "start")) continue;
+        localCrashBar(); localBootFlow = "start"; localBootBuf = [];
+      }
+      const prev = localBootBuf[localBootBuf.length - 1];
+      if (prev && l.t && prev.t && l.t - prev.t < 5 && prev.msg === m) { localBootBar(); continue; }
+      localBootBuf.push(l);
+      localBootBar();
+      continue;
+    }
+    if (CRASH.test(m)) { localCrash.push(l); if (l.t && (!earliest || l.t < earliest)) earliest = l.t; continue; }
+    localCrashBar();
+    localBootBar();
+    // 烘焙昼夜标记行（回溯数据里同样按行渲染，天然按 ts 就位）
+    if (l.type === "day" || l.type === "night") {
+      frag.appendChild(markerEl({ ts: l.t, type: l.type, dn: l.dn }, l.msg));
+      if (l.t && (!earliest || l.t < earliest)) earliest = l.t;
+      continue;
+    }
+    const tText = l.t ? timeColL(l.t) : "·";
+    const ev = parseEvent(m);
+    const meaningful = MEANINGFUL.includes(ev.cls);
+    if (l.t) {
+      if (meaningful && prevT && Math.floor(l.t / 3600) !== Math.floor(prevT / 3600)) frag.appendChild(timebarEl(l.t));
+      if (meaningful) prevT = l.t;
+    }
+    const ip = initProgressItem(l, tText);
+    if (ip) { localDieBar(); frag.appendChild(ip); continue; }
+    if (/^Resetting game objects \d+%|^Loading world data: \d+%/.test(m)) continue;
+    // boot 相同内容 5 秒内重复去重
+    if (ev.cls === "boot") {
+      if (localBootMsg && l.t && l.t - localBootT < 5 && ev.body === localBootMsg) continue;
+      if (l.t) { localBootT = l.t; localBootMsg = ev.body; }
+    }
+    // 扫描噪音：回溯历史同样混合聚合（死亡线先收掉）
+    if (NOISE_CLS[ev.cls]) {
+      localDieBar();
+      if (localSeg) {
+        localAppend(ev);
+      } else {
+        localSeg = makeSegRow(l, ev, tText);
+        frag.appendChild(localSeg);
+        localAppend(ev);
+      }
+    } else if (ev.cls === "die") {
+      // 死亡：回溯同样聚合为分段彩线
+      if (localSeg) { localSeg = null; localParts = []; localTypes = new Set(); }
+      const last = localDie[localDie.length - 1];
+      if (last && last.name === ev.name) last.count++;
+      else localDie.push({ name: ev.name, count: 1 });
+    } else if (ev.cls === "save") {
+      // 连续存档聚合（与实时一致）：不打断 localSeg（连接噪音跨存档累积）
+      localDieBar();
+      localSavePush(l, m);
+    } else {
+      localDieBar();
+      if (localSeg) { localSeg = null; localParts = []; localTypes = new Set(); }
+      frag.appendChild(makeItem({ ...l, msg: m }, ev, tText));
+    }
+    if (l.t && (!earliest || l.t < earliest)) earliest = l.t;
+  }
+  localDieBar();
+  localCrashBar();
+  localBootBar();
+  // 视觉保持：插入顶部后按新增高度补偿滚动，视口内容不跳动（QQ 式）
+  const hBefore = box.scrollHeight;
+  box.insertBefore(frag, box.firstChild);
+  box.scrollTop += box.scrollHeight - hBefore;
+  $("logcount").textContent = box.children.length + " 条事件";
+  ensureFill();
+}
+
+function render(d) {
+  $("error").style.display = "none";
+  $("board").style.display = "flex";
+  $("online").textContent = d.online >= 0 ? d.online : "–";
+  $("dot").className = "dot " + (d.online > 0 ? "on" : "off");
+  $("terraria").innerHTML = d.terraria === "active"
+    ? '<span class="status-ok">运行中</span>'
+    : '<span class="status-bad">' + d.terraria + '</span>';
+  $("uptime").textContent = fmtUptime(d.uptime_since);
+
+  $("cpu").innerHTML = d.cpu_percent + "<small>%</small>";
+  $("cpuTxt").textContent = d.cpu_percent + "%";
+  setBar("cpuBar", d.cpu_percent);
+
+  const memU = d.mem_used_mb, memT = d.mem_total_mb;
+  const swU = d.swap_used_mb, swT = d.swap_total_mb;
+  const memPct = memU / memT * 100;
+  const totalPct = Math.min(100, (memU + swU) / memT * 100);
+  const usingSwap = swU > 0;
+  $("memu").textContent = fmtG(memU);
+  $("memt").textContent = fmtG(memT);
+  $("memTxt").innerHTML = fmtG(memU) + " / " + fmtG(memT) + "G" +
+    (usingSwap ? ' <span style="color:var(--red)">+swap ' + fmtG(swU) + 'G</span>' : "");
+  $("swapTag").innerHTML = usingSwap ? ' <span style="color:var(--red)">(吃Swap)</span>' : "";
+  setBar("memBar", totalPct, usingSwap ? "hot" : "");
+
+  const diskU = d.disk_total_gb - d.disk_free_gb;
+  $("diskf").textContent = d.disk_free_gb;
+  $("diskt").textContent = d.disk_total_gb;
+  $("diskTxt").textContent = d.disk_free_gb + "G 空闲 / " + d.disk_total_gb + "G";
+  setBar("diskBar", diskU / d.disk_total_gb * 100);
+
+  // 上行带宽（上限 3Mbps = 375 KB/s）
+  const tx = d.net_tx_kbs || 0;
+  $("netTxt").textContent = tx.toFixed(1) + " / 375 KB/s";
+  setBar("netBar", tx / 375 * 100);
+
+  $("bkcount").textContent = d.backups.count;
+  // 昼夜扁条（白=白天，灰=夜晚）+ 游戏内天数
+  const gt = d.game_time || {};
+  const dn = $("dnbar");
+  dn.className = gt.day === null ? "" : gt.day ? "day" : "night";
+  $("dntxt").innerHTML = "游戏时间 " + (gt.time || "--:--") + " " +
+    "<b class='" + (gt.day === null ? "" : gt.day ? "day" : "night") + "'>" + (gt.label || "未知") + "</b>" +
+    (d.world_day ? " <b class='dnum'>" + d.world_day + "</b>" : "");
+  // 昼夜分割线由服务端烘焙进 /logs 行流（准确 ts/dn），前端不再做任何补插
+  const names = d.players || [];
+  $("names").textContent = names.length
+    ? "在玩: " + names.map(p =>
+        p.name + " · " + (p.minutes >= 60
+          ? Math.floor(p.minutes / 60) + "h" + (p.minutes % 60) + "m"
+          : p.minutes + "min")).join("，")
+    : "现在没人在线";
+}
+
+function renderLogs(lines) {
+  const box = $("logbox");
+  // 只在用户位于底部附近时才跟随滚动，往上翻历史时不弹回底部
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  for (const l of lines) pushRow(l);
+  if (stick) box.scrollTop = box.scrollHeight;
+  $("logcount").textContent = box.children.length + " 条事件";
+  ensureFill();
+}
+
+// 内容不足一屏时自动加载更早（QQ 式：无滚动条也要能往上翻历史）
+function ensureFill() {
+  if (atStart || loadingEarlier) return;
+  const box = $("logbox");
+  if (box.scrollHeight <= box.clientHeight + 5) loadEarlier(null, true);
+}
+
+function loadLogs() {
+  const url = lastSeq ? API + "/logs?after_seq=" + lastSeq : API + "/logs";
+  fetch(url, { cache: "no-store" })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(j => {
+      if (j.next_seq > lastSeq) lastSeq = j.next_seq;
+      const lines = j.lines || [];
+      if (!lastSeqBefore && lines.length) {
+        // 首次加载：先回溯补齐更早历史再渲染最新行。
+        // 保证同一启停段完整落入 box（seenStartTs 先记录），
+        // 避免 journal 重复推送的横幅/完成标志被异步切分后二次折叠（03:37 ×2 根因）
+        const minT = Math.min(...lines.map(l => l.t).filter(Boolean));
+        lastSeqBefore = true;
+        if (minT) {
+          loadingEarlier = true;   // 占住防 ensureFill 并发回溯
+          fetch(API + "/logs?before=" + minT + "&limit=150", { cache: "no-store" })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(jj => {
+              loadingEarlier = false;
+              const h = (jj.lines || []).filter(l => l.t && l.t < minT);
+              if (h.length) prependLines(h);
+              renderLogs(lines);
+            })
+            .catch(() => { loadingEarlier = false; renderLogs(lines); });
+          return;
+        }
+      }
+      renderLogs(lines);
+    })
+    .catch(() => {});
+}
+
+let loadingEarlier = false;  // 顶部自动加载防并发
+let atStart = false;         // 已翻到最早
+let emptyReturns = 0;        // 连续空返回计数（防误判"已到最早"）
+let lastSeqBefore = false;   // 首次回溯补齐历史已执行（只做一次）
+let lastBootT = 0, lastBootMsg = "";   // boot 相同内容 5 秒内重复（启动横幅打两次）只显示一条
+const MEANINGFUL = ["chat", "io", "save", "boot", "event", "die"];  // 刻度线只看这些（扫描噪音不划）
+
+function loadEarlier(done, silent) {
+  if (!earliest || atStart || loadingEarlier) { if (done) done(); return; }
+  loadingEarlier = true;
+  fetch(API + "/logs?before=" + earliest + "&limit=100", { cache: "no-store" })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(j => {
+      const lines = (j.lines || []).filter(l => l.t && l.t < earliest);
+      if (lines.length) {
+        emptyReturns = 0;
+        prependLines(lines);
+      } else {
+        emptyReturns++;
+        if (emptyReturns >= 2) { atStart = true; $("atStartTip").style.display = ""; }
+      }
+      loadingEarlier = false;
+      if (done) done();
+      // 若仍贴着顶部且未到最早，继续自动加载直到视口有内容（QQ 式，静默不闪按钮）
+      if (!atStart) {
+        const box = $("logbox");
+        if (box.scrollTop < 120) setTimeout(() => loadEarlier(null, true), 150);
+      }
+    })
+    .catch(() => { loadingEarlier = false; if (done) done(); });
+}
+
+function setMode(m) {
+  mode = m;
+  $("m1").classList.toggle("on", m === "chat");
+  $("m2").classList.toggle("on", m === "raw");
+  $("msg").placeholder = m === "chat" ? "给服内玩家发消息…" : "控制台命令（save / kick / give…）";
+}
+
+function authState() {
+  $("authState").textContent = localStorage.getItem("tshock_token") ? "令牌已保存" : "未设置令牌";
+}
+function toggleLegend() {
+  const lg = $("legend");
+  const btn = $("legendBtn");
+  const show = lg.style.display === "none";
+  lg.style.display = show ? "" : "none";
+  btn.textContent = show ? "收起图例" : "点击查看图例";
+}
+
+// 鉴权：点击标题弹出入口；通过后显示发消息区
+let authed = false;
+function toggleAuth() {
+  const row = $("authRow");
+  if (authed) return;
+  row.style.display = row.style.display === "none" ? "flex" : "none";
+  if (row.style.display === "flex") $("token").focus();
+}
+function auth() {
+  const token = $("token").value.trim();
+  if (!token) { $("authMsg").textContent = "请输入令牌"; return; }
+  fetch(API + "/auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token })
+  }).then(r => r.json()).then(j => {
+    if (j.ok) {
+      authed = true;
+      localStorage.setItem("tshock_token", token);
+      $("sendRow").style.display = "flex";
+      $("authRow").style.display = "none";
+      $("authMsg").textContent = "";
+      authState();
+    } else {
+      $("authMsg").textContent = "令牌无效";
+    }
+  }).catch(() => { $("authMsg").textContent = "无法连接 API"; });
+}
+// 页面加载：localStorage 有令牌则静默鉴权，通过直接显示发送框
+(function () {
+  const saved = localStorage.getItem("tshock_token");
+  if (saved) {
+    $("token").value = saved;
+    auth();
+  }
+})();
+
+function sendCmd() {
+  const token = localStorage.getItem("tshock_token") || "";
+  const msg = $("msg").value.trim();
+  if (!token) { alert("请先鉴权"); return; }
+  if (!msg) return;
+  const cmd = mode === "chat" ? "say " + msg : msg;
+  fetch(API + "/cmd", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, cmd })
+  }).then(r => r.json()).then(j => {
+    if (j.ok) {
+      $("msg").value = "";
+      loadLogs();
+    } else {
+      alert("发送失败: " + (j.error || "未知错误"));
+      if (j.error === "invalid token") { localStorage.removeItem("tshock_token"); $("authRow").style.display = "flex"; $("sendRow").style.display = "none"; }
+    }
+  }).catch(() => alert("无法连接 API"));
+}
+$("msg").addEventListener("keydown", e => { if (e.key === "Enter") sendCmd(); });
+$("token").addEventListener("keydown", e => { if (e.key === "Enter") auth(); });
+
+function load() {
+  fetch(API + "/stats", { cache: "no-store" })
+    .then(r => { if (!r.ok) throw 0; return r.json(); })
+    .then(render)
+    .catch(() => { $("error").style.display = ""; $("board").style.display = "none"; });
+}
+
+load();
+loadLogs();
+setInterval(load, 15000);
+setInterval(loadLogs, 4000);
+// 滑到顶部自动加载更早（QQ 式无限上翻，静默不闪按钮）
+$("logbox").addEventListener("scroll", () => {
+  const box = $("logbox");
+  if (!loadingEarlier && !atStart && box.scrollTop < 120) loadEarlier(null, true);
+});
+</script>
+</body>
+</html>

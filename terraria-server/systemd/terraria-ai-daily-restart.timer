@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily 04:30 restart timer for Terraria AI bots
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

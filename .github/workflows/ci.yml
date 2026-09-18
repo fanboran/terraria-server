@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-syntax:
+    name: Python 语法校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"   # 与线上运行版本保持一致
+      - name: py_compile
+        run: |
+          python -m py_compile terraria-server/src/terraria_ai.py
+          python -m py_compile terraria-server/src/stats_server.py
+
+  ilpatch-build:
+    name: IL 补丁工程构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: dotnet build
+        working-directory: terraria-server/ilpatch
+        run: dotnet build -c Release
+
+  secret-scan:
+    name: 敏感信息扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 检查是否有密钥/密码/私有 IP 误提交
+        run: |
+          set +e
+          PATTERNS='sk-[A-Za-z0-9]{20,}|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|password\s*=\s*[^<[:space:]]|(^|[^0-9])(10|172\.1[6-9]|192\.168)\.[0-9]+\.[0-9]+'
+          if grep -rInE "$PATTERNS" \
+               --include='*.py' --include='*.sh' --include='*.md' \
+               --include='*.html' --include='*.env*' --include='*.service' \
+               --exclude-dir=.git . ; then
+            echo "::error::发现疑似敏感信息，请改用占位符"
+            exit 1
+          fi
+          echo "未发现敏感信息"

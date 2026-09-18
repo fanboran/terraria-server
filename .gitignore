@@ -1,0 +1,64 @@
+# ============================================================
+# 运行时与玩家数据（不入库）
+# ============================================================
+terraria-server/worlds/
+terraria-server/backups/
+terraria-server/console.fifo
+terraria-server/logs/
+terraria-server/probe_anchor.json
+terraria-server/memory.txt
+terraria-server/.mem_since
+terraria-server/player_colors.json
+terraria-server/__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+
+# ============================================================
+# 敏感配置（密钥/令牌/密码，绝不入库）
+# ============================================================
+ai.env
+ai2.env
+**/ai.env
+**/ai2.env
+.env
+.env.*
+.api_token
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# ============================================================
+# 版权受限 / 超大二进制（不入库）
+#   decomp/ 为 Terraria 官方程序集的反编译产物（Re-Logic 版权）
+#   *.exe  为 Terraria 官方服务端及其补丁产物（商业软件）
+# ============================================================
+terraria-server/decomp/
+terraria-server/ilpatch/*.exe
+terraria-server/ilpatch/bin/
+terraria-server/ilpatch/obj/
+**/TerrariaServer*.exe
+actions-runner.tar.gz
+*.tar.gz
+*.zip
+!terraria-server/examples/*.zip
+
+# ============================================================
+# 第三方参考仓库（MaiBot 衍生项目，不属于本仓库）
+# ============================================================
+mai-terraria/
+
+# ============================================================
+# 备份残留 / 编辑器 / 系统
+# ============================================================
+*.bak
+*.bak[0-9]
+*.bak_*
+*.bak[0-9]_*
+*~
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

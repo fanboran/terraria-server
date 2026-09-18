@@ -1,0 +1,13 @@
+[Unit]
+Description=Terraria read-only stats API (port 19980)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/usr/bin/python3 /opt/terraria/scripts/stats_server.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

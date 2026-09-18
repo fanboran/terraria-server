@@ -1,0 +1,6 @@
+[Unit]
+Description=Daily low-peak restart of Terraria AI bots (clears accumulated state)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart terraria-ai terraria-ai-tt

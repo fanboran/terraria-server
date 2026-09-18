@@ -1,0 +1,20 @@
+# 统一换行符为 LF：本项目所有脚本/配置/单元文件最终都在 Linux 上运行，
+# CRLF 会导致 "bad interpreter" 等难以排查的问题。
+* text=auto eol=lf
+
+*.sh      text eol=lf
+*.py      text eol=lf
+*.html    text eol=lf
+*.md      text eol=lf
+*.json    text eol=lf
+*.cs      text eol=lf
+*.csproj  text eol=lf
+*.service text eol=lf
+*.timer   text eol=lf
+*.yml     text eol=lf
+*.env.example text eol=lf
+
+# 二进制
+*.exe     binary
+*.wld     binary
+*.tar.gz  binary

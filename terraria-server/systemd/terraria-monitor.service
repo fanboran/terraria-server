@@ -1,0 +1,15 @@
+# /etc/systemd/system/terraria-monitor.service
+# 链路质量 / 健康度采样器（scripts/monitor.sh），数据落 logs/ 供 bwcheck 分析
+[Unit]
+Description=Terraria health monitor sampler
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/opt/terraria/scripts/monitor.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

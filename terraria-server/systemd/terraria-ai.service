@@ -1,0 +1,15 @@
+[Unit]
+Description=Terraria AI chat bot
+After=network-online.target terraria.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/opt/terraria/ai.env
+ExecStart=/usr/bin/python3 /opt/terraria/scripts/terraria_ai.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
