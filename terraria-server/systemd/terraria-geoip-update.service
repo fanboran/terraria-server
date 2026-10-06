@@ -1,0 +1,10 @@
+# /etc/systemd/system/terraria-geoip-update.service
+# 从 APNIC 拉取最新分配数据，重建 CN+HK 白名单（重跑时勿在白名单生效期间清空集合）
+[Unit]
+Description=Update CN+HK whitelist ipset for Terraria port 7777
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/terraria/scripts/update_cn_ipset.py

@@ -1,0 +1,11 @@
+# /etc/systemd/system/terraria-geoip-update.timer
+# 每周一 05:00 更新地区白名单（避开 04:00 备份与 04:30 bot 重启）
+[Unit]
+Description=Weekly update of CN+HK whitelist ipset
+
+[Timer]
+OnCalendar=Mon *-*-* 05:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

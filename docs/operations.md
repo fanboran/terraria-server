@@ -96,8 +96,40 @@ curl -s "http://ip-api.com/json/<IP>?lang=zh-CN"
 |---|---|
 | `X was booted: Incorrect password` | 密码输错（不是被墙） |
 | `X was booted: Y is already on this server` | 存在残留会话；等 keepalive 回收（约 90 秒） |
+| `X was booted: This server is full right now` | 槽位被占——**先查是不是垃圾连接占槽**（见 §5.1） |
 | `X lost connection...` | 连接异常中断（客户端网络/链路问题居多） |
 | 同一 IP 反复 connecting/booted | 客户端网络抖动或握手包丢失 |
+
+### 5.1 地区白名单（境外扫描器防护，2026-10-06 上线）
+
+**背景**：7777 端口长期被境外扫描器盯上，它们建立 TCP 连接后只发垃圾包，会占满 `maxplayers=8` 的槽位，导致真人被拒"server is full"。
+
+**机制**：`ipset cn_hk` 白名单（中国大陆 + 香港全部 IP 段，来自 APNIC 官方分配数据）+ iptables 规则：**源 IP 不在白名单内访问 7777（TCP/UDP）直接 DROP**。
+
+```bash
+# 手动更新白名单（数据源 APNIC，每周一 05:00 由 timer 自动执行）
+sudo python3 /opt/terraria/scripts/update_cn_ipset.py            # 完整更新（下载+重建+应用）
+sudo python3 /opt/terraria/scripts/update_cn_ipset.py --rules-only  # 只应用 iptables 规则
+
+# 查看状态
+sudo ipset list cn_hk | grep "Number of entries"   # 当前 11631 段
+sudo iptables -S INPUT | grep match-set             # 运行时规则
+
+# 海外朋友要来玩？把 IP/CIDR 写进例外文件（下次更新后生效），或临时手动加：
+echo "<IP>" | sudo tee -a /opt/terraria/scripts/cn_hk_overrides.txt
+sudo ipset add cn_hk <IP>
+```
+
+**组件**：
+- `/etc/ipset-terraria.conf` — ipset 恢复文件（原子生成，下载失败不清空现有白名单）
+- `terraria-ipset.service` — 开机恢复 ipset（`Before=ufw.service`，先于白名单规则加载）
+- `terraria-geoip-update.timer` — 每周一 05:00 更新
+- `/etc/ufw/before.rules` — DROP 规则（ufw reload/重启后自动加载）
+- `cn_hk_overrides.txt` — 手动例外（海外玩家 IP）
+
+**注意事项**：
+- 玩家若漫游到境外网络（出国旅行换网络），IP 不在白名单内会进不来——加进 overrides 即可
+- 白名单生效期间 **不要清空 cn_hk 集合**（等于封禁所有人）；更新脚本采用原子写入规避
 
 ## 6. 部署与同步
 

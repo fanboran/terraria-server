@@ -1,0 +1,15 @@
+# /etc/systemd/system/terraria-ipset.service
+# 开机时恢复地区白名单 ipset（必须先于 ufw 加载，否则 7777 白名单规则会因集合不存在而失败）
+[Unit]
+Description=Load CN+HK whitelist ipset for Terraria port 7777
+DefaultDependencies=no
+Before=network-pre.target ufw.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '/usr/sbin/ipset restore -exist < /etc/ipset-terraria.conf'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
